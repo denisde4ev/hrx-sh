@@ -1,0 +1,145 @@
+#!/bin/sh
+
+
+case $1 in --help) cat << . # todo: im lazy ta capitalize this opts in help message: (even 'todo' is not capitalized, this was not intentional)
+Usage: ${0#*/} c|x|t <-f hrxfile> [-b boundary] [...files]
+.
+exit; esac
+
+case $1 in [!-]*)  set -- -"$@"; esac
+
+OPTIND=1;
+unset opt_c opt_x opt_t opt_f opt_f_val opt_b opt_b_val
+while getopts cxf:b: i; do
+	case $i in
+		c) opt_c='';;
+		x) opt_x='';;
+		t) opt_t='';;
+		f) opt_f=''; opt_f_val=$OPTARG;;
+		b) opt_b=''; opt_b_val=$OPTARG;;
+		?) exit;
+	esac
+done
+shift $((OPTIND - 1))
+
+
+err() {
+	printf %s\\n >&2 "${0##*/} $1"
+	exit "${2-2}"
+}
+log() {
+	printf %s\\n >&2 "${0##*/} $@"
+}
+
+case ${opt_c+c}${opt_x+x} in
+'')
+	err 'specify one of -c or -x options'
+	;;
+cx)
+	err 'do not specify both -c and -x options'
+	;;
+esac
+
+case ${opt_f_var-} in -) unset opt_f; esac # if its '-' then same as missing -> read from stdin
+# and do not add test for if the input is stdin, hrx is human readable and *typeable*
+
+
+case ${opt_b+b} in
+	b) boundary=$opt_b_var;;
+	*) unset boundary;;
+esac
+
+
+# parging fns:
+#(none)
+hrx_parse_comment() {
+	while read -r line; do
+		case $line in
+			"$boundary"|"$boundary "*) break;;
+		esac
+	done
+}
+hrx_parse_entry() {
+	# note: $line var could be defined by fn hrx_parse_first_boundary
+
+	case ${line+x} in '') read -r line; esac
+	while :; do
+		err 'TODO HERE' # TODO:! HERE
+		case $i in
+			"$boundary")
+			""*) err 'parse_name not done'
+		esac
+
+		read -r line || break
+	done
+}
+hrx_parse_first_boundary() { # seems to work
+	# reads untill finds first  boundary
+	# note: if first entry is a comment x_path will be unset
+	# note: if empty input / cant find line with boundary, then boundary will be unset
+	# note: will leave $line var to be parsed later on by *(todo fn name)*
+
+	while read -r line; do
+		if
+			case $line in
+				\<*) _line=${line#?};; # remove first char
+				*) false;;
+			esac && \
+			_boundary=${_line%%\>*} && \
+			case ${_boundary} in
+				''|*[!=]*) false;;
+				*) boundary=${_line%%\>*}\>
+			esac
+		then
+			_boundary=\<${_boundary}\>
+			case $line in
+				"$_boundary"|"$_boundary "*) boundary=$_boundary; break;; # found first boundary
+				*) err "parsing error in line: $line" 4;;
+			esac
+		else
+			log "warning: unexpected line: $line"
+		fi
+	done
+}
+
+
+
+IFS=''
+
+main() {
+	
+	case ${opt_c+c}${opt_x+x} in
+	t)
+		err 'hrx -t : NOT IMPLEMENTED'
+		#
+		case ${opt_b+b} in
+			b)
+				hrx_parse_first_boundary
+				case 
+			;;
+			*) hrx_next_path
+		esac
+
+
+
+		#
+		;;
+	c)
+		err 'hrx -c : NOT IMPLEMENTED'
+		;;
+	x) 
+		err 'hrx -x : NOT IMPLEMENTED'
+		hrx_x() {
+			err 'hrx_x : NOT IMPLEMENTED'
+		}
+		case $# in 
+		;;
+	esac
+
+
+}
+
+case ${opt_f:+f} in
+	f) main "$@" < "$opt_f_var";;
+	*) main "$@";;
+esac
