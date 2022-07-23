@@ -73,6 +73,29 @@ hrx_parse_entry() {
 		read -r line || break
 	done
 }
+
+hrx_parse__boundary_line() {
+	case $line in
+		\<=*\>*) ;;
+		*) return 1;;
+	esac
+
+	_i=${line#?}
+	_i=${_i%%\>*}
+
+	case ${_i} in
+		''|*[!=]*) return 1;;
+		*) boundary=${_i%%\>*}\>
+	esac
+
+	_i=\<${_i}\>
+	case $line in
+		"$_i"|"$_i "*) boundary=$_i;; # found first boundary
+		*) err "parsing error in line: $line" 4;;
+	esac
+}
+
+
 hrx_parse_first_boundary() { # seems to work
 	# reads untill finds first  boundary
 	# note: if first entry is a comment x_path will be unset
@@ -80,22 +103,8 @@ hrx_parse_first_boundary() { # seems to work
 	# note: will leave $line var to be parsed later on by *(todo fn name)*
 
 	while read -r line; do
-		if
-			case $line in
-				\<*) _line=${line#?};; # remove first char
-				*) false;;
-			esac && \
-			_boundary=${_line%%\>*} && \
-			case ${_boundary} in
-				''|*[!=]*) false;;
-				*) boundary=${_line%%\>*}\>
-			esac
-		then
-			_boundary=\<${_boundary}\>
-			case $line in
-				"$_boundary"|"$_boundary "*) boundary=$_boundary; break;; # found first boundary
-				*) err "parsing error in line: $line" 4;;
-			esac
+		if hrx_parse__boundary_line "$line"; then
+			break
 		else
 			log "warning: unexpected line: $line"
 		fi
@@ -108,14 +117,14 @@ IFS=''
 
 main() {
 	
-	case ${opt_c+c}${opt_x+x} in
+	case ${opt_c+c}${opt_x+x}${opt_t+t} in
 	t)
 		err 'hrx -t : NOT IMPLEMENTED'
 		#
 		case ${opt_b+b} in
 			b)
 				hrx_parse_first_boundary
-				case 
+				case
 			;;
 			*) hrx_next_path
 		esac
@@ -127,12 +136,12 @@ main() {
 	c)
 		err 'hrx -c : NOT IMPLEMENTED'
 		;;
-	x) 
+	x)
 		err 'hrx -x : NOT IMPLEMENTED'
 		hrx_x() {
 			err 'hrx_x : NOT IMPLEMENTED'
 		}
-		case $# in 
+		case $# in
 		;;
 	esac
 
