@@ -1,20 +1,34 @@
 #!/bin/sh
+set -eu
+
+err() {
+	printf %s\\n >&2 "${0##*/}:$1"
+	exit "${2-2}"
+}
+log() {
+	printf %s\\n >&2 "${0##*/}: $1"
+}
 
 
-case $1 in --help) cat << . # todo: im lazy ta capitalize this opts in help message: (even 'todo' is not capitalized, this was not intentional)
-Usage: ${0#*/} c|x|t <-f hrxfile> [-b boundary] [...files]
-.
+
+case $# in 0) err "use --help for usage"; esac
+
+case $1 in --help)
+printf %s\\n \
+"Usage: ${0#*/} c|x|t <-f hrxfile> [-b boundary] [...files]" \
+;
 exit; esac
 
-case $1 in [!-]*)  set -- -"$@"; esac
+case $1 in [!-]*)  set -- -"$@"; esac # first argument is always an option
 
 OPTIND=1;
 unset opt_c opt_x opt_t opt_f opt_f_val opt_b opt_b_val
-while getopts cxf:b: i; do
+while getopts cxtvf:b: i; do
 	case $i in
 		c) opt_c='';;
 		x) opt_x='';;
 		t) opt_t='';;
+		v) opt_v='';;
 		f) opt_f=''; opt_f_val=$OPTARG;;
 		b) opt_b=''; opt_b_val=$OPTARG;;
 		?) exit;
@@ -23,58 +37,73 @@ done
 shift $((OPTIND - 1))
 
 
-err() {
-	printf %s\\n >&2 "${0##*/} $1"
-	exit "${2-2}"
+
+# fns:
+when_empty_archivefile() {
+	case ${1+x} in
+		x) err "archive file is empty" "$1";;
+		*) log "archive file is empty";;
+	esac
 }
-log() {
-	printf %s\\n >&2 "${0##*/} $@"
-}
-
-case ${opt_c+c}${opt_x+x} in
-'')
-	err 'specify one of -c or -x options'
-	;;
-cx)
-	err 'do not specify both -c and -x options'
-	;;
-esac
-
-case ${opt_f_var-} in -) unset opt_f; esac # if its '-' then same as missing -> read from stdin
-# and do not add test for if the input is stdin, hrx is human readable and *typeable*
-
-
-case ${opt_b+b} in
-	b) boundary=$opt_b_var;;
-	*) unset boundary;;
-esac
-
 
 # parging fns:
-#(none)
-hrx_parse_comment() {
-	while read -r line; do
-		case $line in
-			"$boundary"|"$boundary "*) break;;
-		esac
-	done
-}
-hrx_parse_entry() {
-	# note: $line var could be defined by fn hrx_parse_first_boundary
+case ${opt_v+v} in
+v)
+	hrx_parse_comment() {
+		printf %s\\n "comment:"
+		while read -r line; do
+			case $line in
+				"$boundary"|"$boundary "*) break;;
+				*) printf '  %s\n' "$line";;
+			esac
+		done
+	}
+	;;
+*)
+	hrx_parse_comment() {
+		while read -r line; do
+			case $line in
+				"$boundary"|"$boundary "*) break;;
+			esac
+		done
+	}
+esac
 
-	case ${line+x} in '') read -r line; esac
+##hrx_parse_entry_test() {
+##	# note: $line var could already be set by fn `hrx_parse_first_boundary`
+##
+##	case ${line+x} in '') read -r line; esac
+##	while :; do
+##		err 'TODO HERE' # TODO:! HERE
+##		case $line in
+##			"$boundary") err TODO;;
+##			""*) err 'parse_name not done'
+##		esac
+##
+##		read -r line || break
+##	done
+##}
+
+hrx_next_path() {
+	case ${1-0} in
+		#1) ;; # use previous var `line` as is
+		0) read -r line;;
+	esac
 	while :; do
-		err 'TODO HERE' # TODO:! HERE
-		case $i in
-			"$boundary")
-			""*) err 'parse_name not done'
+		case $line in
+			"$boundary") hrx_parse_comment || return; continue;; # hrx_parse_comment reads next lines
+			"$boundary "*) path=${line#"$boundary"};;
+			*) err "parse err in line: $line";;
 		esac
-
-		read -r line || break
+		break
 	done
 }
 
-hrx_parse__boundary_line() {
+_hrx_parse__boundary_line() {
+	# requires var `line`
+	# sets var `boundary` or returns 1 or if parsing error throws `err`
+	# temp vars: `_i`
+
 	case $line in
 		\<=*\>*) ;;
 		*) return 1;;
@@ -94,8 +123,6 @@ hrx_parse__boundary_line() {
 		*) err "parsing error in line: $line" 4;;
 	esac
 }
-
-
 hrx_parse_first_boundary() { # seems to work
 	# reads untill finds first  boundary
 	# note: if first entry is a comment x_path will be unset
@@ -103,7 +130,7 @@ hrx_parse_first_boundary() { # seems to work
 	# note: will leave $line var to be parsed later on by *(todo fn name)*
 
 	while read -r line; do
-		if hrx_parse__boundary_line "$line"; then
+		if _hrx_parse__boundary_line "$line"; then
 			break
 		else
 			log "warning: unexpected line: $line"
@@ -113,42 +140,53 @@ hrx_parse_first_boundary() { # seems to work
 
 
 
-IFS=''
 
+IFS='' # do not trim `read -r line`
+
+
+case ${opt_b+b} in
+	b) boundary=$opt_b_val;;
+	*) unset boundary;;
+esac
+
+files=0
+explisit_dirs=0
 main() {
-	
-	case ${opt_c+c}${opt_x+x}${opt_t+t} in
-	t)
-		err 'hrx -t : NOT IMPLEMENTED'
-		#
-		case ${opt_b+b} in
-			b)
-				hrx_parse_first_boundary
-				case
-			;;
-			*) hrx_next_path
-		esac
-
-
-
-		#
-		;;
-	c)
-		err 'hrx -c : NOT IMPLEMENTED'
-		;;
-	x)
-		err 'hrx -x : NOT IMPLEMENTED'
-		hrx_x() {
-			err 'hrx_x : NOT IMPLEMENTED'
-		}
-		case $# in
-		;;
+case ${opt_c+c}${opt_x+x}${opt_t+t} in
+t)
+	err 'hrx -t : NOT IMPLEMENTED, {in progress}'
+	#
+	case ${opt_b+b} in '')
+		# reads first line(s) untill finds boundary
+		# then sets vars `line` `boundary`
+		hrx_parse_first_boundary || return
 	esac
 
+	
+	###todo: case $# in
+	hrx_next_path
+	###todo: esac
 
+
+
+	#
+	;;
+c)
+	err 'hrx -c : NOT IMPLEMENTED'
+	;;
+x)
+	err 'hrx -x : NOT IMPLEMENTED'
+	;;
+
+*)
+	err 'specify only one of -c, -x or -t option'
+esac
 }
 
+case ${opt_f_val-} in -) unset opt_f; esac # if its '-' then same as missing -> read from stdin
+# and do not add test for if the stdin is the tty, hrx is human readable and *typeable*
+
 case ${opt_f:+f} in
-	f) main "$@" < "$opt_f_var";;
+	f) main "$@" < "$opt_f_val";;
 	*) main "$@";;
 esac
