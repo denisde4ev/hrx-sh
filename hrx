@@ -19,12 +19,12 @@ case $1 in --help)
 printf %s\\n \
 "Usage: $o c|x|t [-f HRXFILE] [-b BOUNDARY] [OPTION]... [FILE]..." \
 "" \
-"Create, extract, or list files from a tar file" \
+"Create, extract, or list files from a hrx file" \
 "" \
 "(soon                    )	c	Create" \
 "(soon                    )	x	Extract" \
 "(in progress             )	t	List" \
-"(ok                      )	-f FILE	Name of TARFILE ('-' for stdin/out)" \
+"(ok                      )	-f FILE	Name of HRXFILE ('-' for stdin/out)" \
 "(considen                )	-C DIR	Change to DIR before operation" \
 "(soon                    )	-v	Verbose" \
 "(soon                    )	-O	Extract to stdout" \
