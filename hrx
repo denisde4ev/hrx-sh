@@ -1,21 +1,51 @@
 #!/bin/sh
 set -eu
 
+o=${0##*["${PATHSEP:-/}"]}
+
 err() {
-	printf %s\\n >&2 "${0##*/}: $1"
+	printf %s\\n >&2 "$o: $1"
 	exit "${2-2}"
 }
 log() {
-	printf %s\\n >&2 "${0##*/}: $1"
+	printf %s\\n >&2 "$o: $1"
 }
-
 
 
 case $# in 0) err "use --help for usage"; esac
 
+
 case $1 in --help)
 printf %s\\n \
-"Usage: ${0#*/} c|x|t <-f hrxfile> [-b boundary] [...files]" \
+"Usage: $o c|x|t [-f HRXFILE] [-b BOUNDARY] [OPTION]... [FILE]..." \
+"" \
+"Create, extract, or list files from a tar file" \
+"" \
+"(soon                    )	c	Create" \
+"(soon                    )	x	Extract" \
+"(in progress             )	t	List" \
+"(ok                      )	-f FILE	Name of TARFILE ('-' for stdin/out)" \
+"(considen                )	-C DIR	Change to DIR before operation" \
+"(soon                    )	-v	Verbose" \
+"(soon                    )	-O	Extract to stdout" \
+"(consider extension      )	-m	Don't restore mtime" \
+"(consider extension      )	-o	Don't restore user:group" \
+"(consider exists check   )	-k	Don't replace existing files" \
+"(won't add               )	-Z	(De)compress using compress" \
+"(won't add               )	-z	(De)compress using gzip" \
+"(won't add               )	-J	(De)compress using xz" \
+"(won't add               )	-j	(De)compress using bzip2" \
+"(won't add               )	--lzma	(De)compress using lzma" \
+"(won't add/consider      )	-a	(De)compress based on extension" \
+"(consider extension      )	-h	Follow symlinks    ( consider extension to hrx -> .hrx+unix whene bounary have permissions and allows symlinks )" \
+"(consider glob           )	-T FILE	File with names to include" \
+"(consider glob           )	-X FILE	File with glob patterns to exclude" \
+"(consider glob           )	--exclude PATTERN	Glob pattern to exclude" \
+"(consider exists check   )	--overwrite		Replace existing files" \
+"(nothing done            )	--strip-components NUM	NUM of leading components to strip" \
+"(nothing done            )	--no-recursion		Don't descend in directories" \
+"(consider extension      )	--numeric-owner		Use numeric user:group" \
+"(consider extension      )	--no-same-permissions	Don't restore access permissions" \
 ;
 exit; esac
 
@@ -23,12 +53,13 @@ case $1 in [!-]*)  set -- -"$@"; esac # first argument is always an option
 
 OPTIND=1;
 unset opt_c opt_x opt_t opt_f opt_f_val opt_b opt_b_val
-while getopts cxtvf:b: i; do
+while getopts cxtvOf:b: i; do
 	case $i in
 		c) opt_c='';;
 		x) opt_x='';;
 		t) opt_t='';;
 		v) opt_v='';;
+		O) opt_O='';;
 		f) opt_f=''; opt_f_val=$OPTARG;;
 		b) opt_b=''; opt_b_val=$OPTARG;;
 		?) exit;
@@ -39,38 +70,38 @@ shift $((OPTIND - 1))
 
 # path-character ::= any character other than
 # U+0000 through U+001F
-#  0 	0 	000 		NUL #  no need to/can't detect, shell scripts does no support it. native shell eror may be printed (if the shell has implemented it)
-#  1 	1 	001 		SOH
-#  2 	2 	002 		STX
-#  3 	3 	003 		ETX
-#  4 	4 	004 		EOT
-#  5 	5 	005 		ENQ
-#  6 	6 	006 		ACK
-#  7 	7 	007 		BEL
-#  8 	8 	010 		BS
-#  9 	9 	011 		TAB
-#  10 	A 	012 		LF
-#  11 	B 	013 		VT
-#  12 	C 	014 		FF
-#  13 	D 	015 		CR
-#  14 	E 	016 		SO
-#  15 	F 	017 		SI
-#  16 	10 	020 		DLE
-#  17 	11 	021 		DC1
-#  18 	12 	022 		DC2
-#  19 	13 	023 		DC3
-#  20 	14 	024 		DC4
-#  21 	15 	025 		NAK
-#  22 	16 	026 		SYN
-#  23 	17 	027 		ETB
-#  24 	18 	030 		CAN
-#  25 	19 	031 		EM
-#  26 	1A 	032 		SUB
-#  27 	1B 	033 		ESC
-#  28 	1C 	034 		FS
-#  29 	1D 	035 		GS
-#  30 	1E 	036 		RS
-#  31 	1F 	037 		US
+#  00 	NUL #  no need to/can't detect, shell scripts does no support it. native shell eror may be printed (if the shell has implemented it)
+#  01 	SOH
+#  02 	STX
+#  03 	ETX
+#  04 	EOT
+#  05 	ENQ
+#  06 	ACK
+#  07 	BEL
+#  08 	BS
+#  09 	TAB
+#  0A 	LF
+#  0B 	VT
+#  0C 	FF
+#  0D 	CR
+#  0E 	SO
+#  0F 	SI
+#  10 	DLE
+#  11 	DC1
+#  12 	DC2
+#  13 	DC3
+#  14 	DC4
+#  15 	NAK
+#  16 	SYN
+#  17 	ETB
+#  18 	CAN
+#  19 	EM
+#  1A 	SUB
+#  1B 	ESC
+#  1C 	FS
+#  1D 	GS
+#  1E 	RS
+#  1F 	US
 # ,
 # DEL U+007F DELETE,
 # '/' U+002F SOLIDUS, # used as path separator (wont detect)
@@ -132,44 +163,44 @@ hrx_is_notnewentry() {
 
 # `entry_type` should always be in (dir|file|comment|x_invalid)
 hrx_parse_begin_dir() {
-	log "(debug) fn hrx_parse_begin_dir       got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_begin_dir       +D got: '$1' ${2-}"
 }
 hrx_parse_begin_file() {
-	log "(debug) fn hrx_parse_begin_file      got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_begin_file      +F got: '$1' ${2-}"
 }
 hrx_parse_begin_comment() {
-	log "(debug) fn hrx_parse_begin_comment   got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_begin_comment   +C got: '$1' ${2-}"
 }
 hrx_parse_begin_x_invalid() {
-	log "(debug) fn hrx_parse_begin_x_invalid got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$1' ${2-}"
 }
 
 
 hrx_parse_end_dir() {
-	log "(debug) fn hrx_parse_end_dir         got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_end_dir         =D got: '$1' ${2-}"
 }
 hrx_parse_end_file() {
-	log "(debug) fn hrx_parse_end_file        got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_end_file        =F got: '$1' ${2-}"
 }
 hrx_parse_end_comment() {
-	log "(debug) fn hrx_parse_end_comment     got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_end_comment     =C got: '$1' ${2-}"
 }
 hrx_parse_end_x_invalid() {
-	log "(debug) fn hrx_parse_end_x_invalid   got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_end_x_invalid   =_ got: '$1' ${2-}"
 }
 
 
 rx_parse_dir() {
-	log "(debug) fn hrx_parse_dir             got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_dir             -D got: '$1' ${2-}"
 }
 hrx_parse_file() {
-	log "(debug) fn hrx_parse_file            got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_file            -F got: '$1' ${2-}"
 }
 hrx_parse_comment() {
-	log "(debug) fn hrx_parse_comment         got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_comment         -C got: '$1' ${2-}"
 }
 hrx_parse_x_invalid() {
-	log "(debug) fn hrx_parse_x_invalid       got: '$1' ${2-}"
+	log "(debug) fn hrx_parse_x_invalid       -_ got: '$1' ${2-}"
 }
 
 _hrx_parse_boundary() {
