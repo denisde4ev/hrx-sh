@@ -68,6 +68,30 @@ done
 shift $((OPTIND - 1))
 
 
+
+
+
+case ${opt_b+b} in b)
+	case $opt_b_val in
+		"${opt_b_val#*[!0-9]*}") # when it is a num (note: including 0, and not including negative nums in -*)
+			_i=$opt_b_val
+			bounary='<'
+			while case $_i in *[!0-9]*) log "ERROR 5"; false;; 0) false; esac; do
+				bounary=$bounary'='
+				: $(( _i = _i - 1 )) || exit
+			done
+			bounary=$bounary'>'
+			;;
+		'<'*'='*'>') # bad: lazy check
+			bounary=$opt_b_val
+			;;
+		=|=*=) # bad: lazy check
+			bounary='<'$opt_b_val'>'
+			;;
+	esac
+esac
+
+
 # path-character ::= any character other than
 # U+0000 through U+001F
 #  00 	NUL #  no need to/can't detect, shell scripts does no support it. native shell eror may be printed (if the shell has implemented it)
@@ -145,166 +169,383 @@ printf \
 \\x5C\
 ;
 )
-in_line() {
-	printf %s "${1-, }in line $line_num: '$line'"
-}
 
-parsing_err() {
-	err "parsing error($1)$(in_line)" "${2-4}"
-}
 
 # fns:
 
-hrx_is_notnewentry() {
-	case $1 in "$boundary"|"$boundary "*)
-		return 1
-	esac
-}
 
-# `entry_type` should always be in (dir|file|comment|x_invalid)
-hrx_parse_begin_dir() {
-	log "(debug) fn hrx_parse_begin_dir       +D got: '$1' ${2-}"
-}
-hrx_parse_begin_file() {
-	log "(debug) fn hrx_parse_begin_file      +F got: '$1' ${2-}"
-}
-hrx_parse_begin_comment() {
-	log "(debug) fn hrx_parse_begin_comment   +C got: '$1' ${2-}"
-}
+# comment:
+hrx_parse_begin_comment() { :; }
+case ${opt_v+v} in
+v)
+	hrx_parse_comment() { printf %s\\n >&2 "comment: $line"; }
+	;;
+*)
+	hrx_parse_comment() { :; }
+esac
+hrx_parse_end_comment() { :; }
+
+# invalid:
 hrx_parse_begin_x_invalid() {
-	log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$1' ${2-}"
+	count_invalid=$(( invalid + 1 ))
 }
+hrx_parse_x_invalid() { :; }
+hrx_parse_end_x_invalid() { :; }
+
+# unused ends:
+hrx_parse_end_dir() { :; }
+hrx_parse_end_file() { :; }
 
 
-hrx_parse_end_dir() {
-	log "(debug) fn hrx_parse_end_dir         =D got: '$1' ${2-}"
-}
-hrx_parse_end_file() {
-	log "(debug) fn hrx_parse_end_file        =F got: '$1' ${2-}"
-}
-hrx_parse_end_comment() {
-	log "(debug) fn hrx_parse_end_comment     =C got: '$1' ${2-}"
-}
-hrx_parse_end_x_invalid() {
-	log "(debug) fn hrx_parse_end_x_invalid   =_ got: '$1' ${2-}"
-}
+case ${opt_c+c}${opt_x+x}${opt_t+t} in
+x|t)
+	# fns for parsing:
+
+	in_line() {
+		printf %s "${1-, }in line $line_num: '$line'"
+	}
+
+	parsing_err() {
+		err "parsing error($1)$(in_line)" "${2-4}"
+	}
+	error() {
+		err "ERROR $1$(in_line)" "${2-4}"
+	}
+
+	hrx_is_boundary() {
+		case $1 in
+			"$boundary"|"$boundary "*) return 0;;
+			*)                         return 1;;
+		esac
+	}
+
+	_should_ignore_path() {
+		case $# in
+		0)
+			return 1
+			;;
+		*)
+			for _i; do
+				case $path in "$_i"|"$_i"/*) # TODO:! args might be in '*/' todo: iterate over args and trim all end '/'
+					return 1
+				esac
+			done
+		esac
+		return 0
+	}
 
 
-rx_parse_dir() {
-	log "(debug) fn hrx_parse_dir             -D got: '$1' ${2-}"
-}
-hrx_parse_file() {
-	log "(debug) fn hrx_parse_file            -F got: '$1' ${2-}"
-}
-hrx_parse_comment() {
-	log "(debug) fn hrx_parse_comment         -C got: '$1' ${2-}"
-}
-hrx_parse_x_invalid() {
-	log "(debug) fn hrx_parse_x_invalid       -_ got: '$1' ${2-}"
-}
+	case ${opt_x+x}${opt_t+t} in
+	# -O option in tar combined with -t or with -xv seems to behave the same way, and filenames got printed to stdout...
+	# `entry_type` should always be in (dir|file|comment|x_invalid)
 
-_hrx_parse_boundary() {
-	case $1 in
-		\<=*\>*) ;;
-		*) return 1;;
-	esac
-
-	_i=${line#?}
-	_i=${_i%%\>*}
-
-	case ${_i} in
-		''|*[!=]*) return 1;;
-		*) boundary=${_i%%\>*}\>
-	esac
-
-	_i=\<${_i}\>
-	case $line in
-		"$_i"*) boundary=$_i;; # found first boundary
-		*) parsing_err 1;;
-	esac
-}
-
-hrx_get_entry_type() {
-
-	# first time needs to get boundary
-	case ${boundary+x} in '')
-		_hrx_parse_boundary "$line" || { # sets 'boundary'
-			err "mallformed entry, can not parse boundary$(in_line)"
+	t)
+		# -t dir:
+		hrx_parse_begin_dir() {
+			count_explisit_dirs=$(( explisit_dirs + 1 ))
+			_should_ignore_path "$@" || {
+				printf %s\\n "$path"
+			}
+			# case ${opt_v+v} in v) # TODO
+			# log "todo: what sohuld -tv options do?"
+			# esac
 		}
+		hrx_parse_dir() {
+			case $line in ?*)
+				log "todo: should not have content? or allow empty lines? ($path, $line)" # TODO
+			esac
+		}
+
+		# -t file:
+		hrx_parse_begin_file() {
+			count_files=$(( files + 1 ))
+			_should_ignore_path "$@" || {
+				printf %s\\n "$path"
+			}
+		}
+		hrx_parse_file() {
+			case ${opt_O+O} in O)
+				_should_ignore_path "$@" || {
+					printf %s\\n "$line"
+				}
+			esac
+		}
+
+		;;
+	x) # TODO: what should happend when -O and -t options specifyed
+		hrx_parse_begin_dir() {
+			: log "(debug) fn hrx_parse_begin_dir       +D got: (path=${path-}) '$line' ${2-}"
+			count_explisit_dirs=$(( explisit_dirs + 1 ))
+		}
+		hrx_parse_begin_file() {
+			: log "(debug) fn hrx_parse_begin_file      +F got: (path=${path-}) '$line' ${2-}"
+			count_files=$(( files + 1 ))
+		}
+		hrx_parse_begin_comment() {
+			: log "(debug) fn hrx_parse_begin_comment   +C got: '$line' ${2-}"
+		}
+		hrx_parse_begin_x_invalid() {
+			: log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$line' ${2-}"
+			count_invalid=$(( invalid + 1 ))
+		}
+
+
+		hrx_parse_end_dir() {
+			: log "(debug) fn hrx_parse_end_dir         -D got: (path=${path-}) '$line' ${2-}"
+		}
+		hrx_parse_end_file() {
+			: log "(debug) fn hrx_parse_end_file        -F got: (path=${path-}) '$line' ${2-}"
+		}
+		hrx_parse_end_comment() {
+			: log "(debug) fn hrx_parse_end_comment     -C got: '$line' ${2-}"
+		}
+		hrx_parse_end_x_invalid() {
+			: log "(debug) fn hrx_parse_end_x_invalid   -_ got: '$line' ${2-}"
+		}
+
+
+		hrx_parse_dir() {
+			: log "(debug) fn hrx_parse_dir             =D got: (path=${path-}) '$line' ${2-}"
+		}
+		hrx_parse_file() {
+			: log "(debug) fn hrx_parse_file            =F got: (path=${path-}) '$line' ${2-}"
+		}
+		hrx_parse_comment() {
+			: log "(debug) fn hrx_parse_comment         =C got: '$line' ${2-}"
+		}
+		hrx_parse_x_invalid() {
+			: log "(debug) fn hrx_parse_x_invalid       =_ got: '$line' ${2-}"
+		}
+		;;
+	#*)
+		#	hrx_parse_begin_dir() {
+		#		: log "(debug) fn hrx_parse_begin_dir       +D got: (path=${path-}) '$line' ${2-}"
+		#		count_explisit_dirs=$(( explisit_dirs + 1 ))
+		#	}
+		#	hrx_parse_begin_file() {
+		#		: log "(debug) fn hrx_parse_begin_file      +F got: (path=${path-}) '$line' ${2-}"
+		#		count_files=$(( files + 1 ))
+		#	}
+		#	hrx_parse_begin_comment() {
+		#		: log "(debug) fn hrx_parse_begin_comment   +C got: '$line' ${2-}"
+		#	}
+		#	hrx_parse_begin_x_invalid() {
+		#		: log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$line' ${2-}"
+		#		count_invalid=$(( invalid + 1 ))
+		#	}
+		#
+		#
+		#	hrx_parse_end_dir() {
+		#		: log "(debug) fn hrx_parse_end_dir         -D got: (path=${path-}) '$line' ${2-}"
+		#	}
+		#	hrx_parse_end_file() {
+		#		: log "(debug) fn hrx_parse_end_file        -F got: (path=${path-}) '$line' ${2-}"
+		#	}
+		#	hrx_parse_end_comment() {
+		#		: log "(debug) fn hrx_parse_end_comment     -C got: '$line' ${2-}"
+		#	}
+		#	hrx_parse_end_x_invalid() {
+		#		: log "(debug) fn hrx_parse_end_x_invalid   -_ got: '$line' ${2-}"
+		#	}
+		#
+		#
+		#	hrx_parse_dir() {
+		#		: log "(debug) fn hrx_parse_dir             =D got: (path=${path-}) '$line' ${2-}"
+		#	}
+		#	hrx_parse_file() {
+		#		: log "(debug) fn hrx_parse_file            =F got: (path=${path-}) '$line' ${2-}"
+		#	}
+		#	hrx_parse_comment() {
+		#		: log "(debug) fn hrx_parse_comment         =C got: '$line' ${2-}"
+		#	}
+		#	hrx_parse_x_invalid() {
+		#		: log "(debug) fn hrx_parse_x_invalid       =_ got: '$line' ${2-}"
+		#	}
 	esac
+
+	_hrx_parse_boundary() {
+		case $1 in
+			\<=*\>*) ;;
+			*) return 1;;
+		esac
+
+		_i=${line#?}
+		_i=${_i%%\>*}
+
+		case ${_i} in
+			''|*[!=]*) return 1;;
+			*) boundary=${_i%%\>*}\>
+		esac
+
+		_i=\<${_i}\>
+		case $line in
+			"$_i"*) boundary=$_i;; # found first boundary
+			*) error 1;;
+		esac
+	}
 
 	hrx_get_entry_type() {
-		case $line in
-			"$boundary") entry_type=comment;;
-			"$boundary "*/) entry_type=dir;;
-			"$boundary "?*) entry_type=file;;
-			"$boundary ")
-				log "warning: comment with space before new line / seems like empty path? $(in_line '')"
-				entry_type=comment
-			;;
-			*) parsing_err 2 1;;
-		esac
 
-		case ${action-} in dir|file) # parsing+validate var `path`
-			path=${line#"$boundary "}
-			case $line in "$boundary $path") ;; *)
-				parsing_err 3
-			esac
-
-			while case $path in /*) ;; *) false; esac; do
-				log "note: triming absolute path$(in_line)"
-				path=${path#/}
+		# first time needs to get boundary
+		case ${boundary+b} in
+		b)
+			#_hrx_parse_boundary
+			while :; do
+				case $line in "$boundary "*) break; esac
+				log "ignoring begining line ${line_num}: ${line}"
+				read -r line || break # seems like empty archive
 			done
+			;;
+		*)
+			_hrx_parse_boundary "$line" || { # sets 'boundary'
+				err "mallformed entry, can not parse boundary$(in_line)"
+			}
+			;;
+		esac
 
-			case $path in
-			'../'*|*'/../'*|*'/..'|'..')
-				err "relative paths contaning '..' are not allowed, path='$path'"
-				;;
+		hrx_get_entry_type() {
 
-			'') # expected when trimming '/'|'///'
-				log "empty path, path='$path'$(in_line)"
-				entry_type=x_invalid
+			unset path
+			case $line in
+				"$boundary") entry_type=comment;;
+				"$boundary "*/) entry_type=dir;;
+				"$boundary "?*) entry_type=file;;
+				"$boundary ")
+					log "warning: comment with space before new line / seems like empty path? $(in_line '')"
+					entry_type=comment
 				;;
-			*["$path_chars_blacklist"]*)
-				log "note: found disawolled char, path='$path'"
-				;;
+				*) parsing_err 2 1;;
 			esac
 
+			case $entry_type in dir|file) # parsing+validate var `path`
+				path=${line#"$boundary "}
+				case $line in "$boundary $path") ;; *)
+					error 3
+				esac
+
+				while case $path in /*) ;; *) false; esac; do
+					log "note: triming absolute path$(in_line)"
+					path=${path#/}
+				done
+
+				case $path in
+				'../'*|*'/../'*|*'/..'|'..')
+					log "relative paths contaning '..' are not allowed, path='$path', SKIPING"
+					entry_type=x_invalid
+					;;
+
+				'') # expected when trimming '/'|'///'
+					log "empty path, path='$path'$(in_line)"
+					entry_type=x_invalid
+					;;
+				*["$path_chars_blacklist"]*)
+					log "note: found disawolled char, path='$path'. allow it anyway."
+					;;
+				esac
+
+			esac
+
+			case $entry_type in
+				dir|file) _needs_args='';;
+				comment|x_invalid) unset _needs_args;;
+				*) unset _needs_args;;
+			esac
+
+		}
+		hrx_get_entry_type "$@"
+	}
+
+	hrx_parser() {
+		line_num=0
+		unset ended
+		unset _needs_args # improve performance for large amount of arguments
+		while read -r line; do
+			line_num=$(( line_num + 1 ))
+
+			case ${entry_type-} in '') ;; *)
+				! hrx_is_boundary "$line" || {
+					hrx_parse_end_"$entry_type"
+					entry_type=''
+				}
+			esac
+
+			
+			case ${entry_type-} in '')
+				hrx_get_entry_type "$line"
+				hrx_parse_begin_"$entry_type" ${_needs_args+"$@"}
+				continue
+			esac
+
+			# NOTE: `entry_type` should always be in (dir|file|comment|x_invalid)
+			hrx_parse_"$entry_type"
+
+		done
+
+		ended=''
+
+		case ${entry_type-} in
+			'')
+				if hrx_get_entry_type "$line"; then
+					hrx_parse_begin_"$entry_type" ${_needs_args+"$@"}
+					hrx_parse_end_"$entry_type"
+				else
+					log "empty archive"
+				fi
+				
+				return
 		esac
+		hrx_parse_end_"$entry_type"
 
 	}
-	hrx_get_entry_type "$@"
-}
 
-hrx_parser() {
-	line_num=0
-	while read -r line; do
-		line_num=$((line_num + 1))
 
-		case ${entry_type-} in '') ;; *)
-			hrx_is_notnewentry "$line" || {
-				hrx_parse_end_"$entry_type" "$line"
-				entry_type=''
-			}
-		esac
+	;;
+c)
+	# fns for creating
+	# consider in thsi is decided: comments wont be allowed
+	# if no boundary option provided, then will scan all files for conflicting boundary-like lines
 
-		
-		case ${entry_type-} in '')
-			hrx_get_entry_type "$line"
-			hrx_parse_begin_"$entry_type" "$line"
-			continue
-		esac
+	# note, same as tar behaiviour -O option is ignore here
 
-		# NOTE: `entry_type` should always be in (dir|file|comment|x_invalid)
-		hrx_parse_"$entry_type" "$line"
 
-	done
+	# specs say:
+	# > When a HRX file is extracted, the extraction process should (by default) create a directory named after the HRX file, with the extension ".hrx" removed
+	# however this implementation of hrx is sticking to what `tar` command does:
+	# extract files as path in PWD
+	# (todo) if -C opt specifyed changes PWD to that dir
 
-	case ${entry_type-} in '') ;; *)
-		hrx_parse_end_"$entry_type" "$line" end
+
+
+	case ${opt_b+b} in '')
+		# for now require to be provided
+		err "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
 	esac
 
-}
+	cat() {
+		case $# in 0) ;; *)
+			case $1 in --) shift; esac
+			case $1 in -) ;; *)
+				cat < "$1"
+				return
+			esac
+		esac
+
+		while read -r line; do
+			printf %s\\n "$line"
+		done
+		printf %s "$line"
+	}
+
+	hrx_create() {
+		for i; do
+			printf %s\\n "$boundary"
+			cat "$"
+		done > "${opt_f_val:?}"
+	}
+
+	err "todo hrx -c, more fns"
+	;;
+esac
 
 
 
@@ -317,19 +558,19 @@ case ${opt_b+b} in
 	*) unset boundary;;
 esac
 
-files=0
-explisit_dirs=0
+count_files=''
+count_explisit_dirs=''
+count_invalid=''
 main() {
 case ${opt_c+c}${opt_x+x}${opt_t+t} in
 t)
-	log "NOTE: 'hrx -t' is in progress"
+	: log "NOTE: 'hrx -t' is in progress"
 
-	hrx_parser
-
-	#
+	hrx_parser "$@"
 	;;
 c)
 	err 'hrx -c : NOT IMPLEMENTED'
+	hrx_parser "$@"
 	;;
 x)
 	err 'hrx -x : NOT IMPLEMENTED'
