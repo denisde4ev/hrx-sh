@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Warning: problematic for binary files,
+# shell scripts can not have null char $'\0' in vairables
+
 o=${0##*["${PATHSEP:-/}"]}
 
 err() {
@@ -21,31 +24,31 @@ printf %s\\n \
 "" \
 "Create, extract, or list files from a hrx file" \
 "" \
-"(soon                    )	c	Create" \
-"(soon                    )	x	Extract" \
-"(in progress             )	t	List" \
-"(ok                      )	-f FILE	Name of HRXFILE ('-' for stdin/out)" \
-"(considen                )	-C DIR	Change to DIR before operation" \
-"(soon                    )	-v	Verbose" \
-"(soon                    )	-O	Extract to stdout" \
-"(consider extension      )	-m	Don't restore mtime" \
-"(consider extension      )	-o	Don't restore user:group" \
-"(consider exists check   )	-k	Don't replace existing files" \
-"(won't add               )	-Z	(De)compress using compress" \
-"(won't add               )	-z	(De)compress using gzip" \
-"(won't add               )	-J	(De)compress using xz" \
-"(won't add               )	-j	(De)compress using bzip2" \
-"(won't add               )	--lzma	(De)compress using lzma" \
-"(won't add/consider      )	-a	(De)compress based on extension" \
-"(consider extension      )	-h	Follow symlinks    ( consider extension to hrx -> .hrx+unix whene bounary have permissions and allows symlinks )" \
-"(consider glob           )	-T FILE	File with names to include" \
-"(consider glob           )	-X FILE	File with glob patterns to exclude" \
-"(consider glob           )	--exclude PATTERN	Glob pattern to exclude" \
-"(consider exists check   )	--overwrite		Replace existing files" \
-"(nothing done            )	--strip-components NUM	NUM of leading components to strip" \
-"(nothing done            )	--no-recursion		Don't descend in directories" \
-"(consider extension      )	--numeric-owner		Use numeric user:group" \
-"(consider extension      )	--no-same-permissions	Don't restore access permissions" \
+"(soon                         )	c	Create" \
+"(in progress                  )	x	Extract" \
+"(in progress - mostly done    )	t	List" \
+"(ok                           )	-f FILE	Name of HRXFILE ('-' for stdin/out)" \
+"(considen                     )	-C DIR	Change to DIR before operation" \
+"(soon                         )	-v	Verbose" \
+"(soon                         )	-O	Extract to stdout" \
+"(consider extension           )	-m	Don't restore mtime" \
+"(consider extension           )	-o	Don't restore user:group" \
+"(consider exists check        )	-k	Don't replace existing files" \
+"(won't add                    )	-Z	(De)compress using compress" \
+"(won't add                    )	-z	(De)compress using gzip" \
+"(won't add                    )	-J	(De)compress using xz" \
+"(won't add                    )	-j	(De)compress using bzip2" \
+"(won't add                    )	--lzma	(De)compress using lzma" \
+"(won't add/consider           )	-a	(De)compress based on extension" \
+"(consider extension           )	-h	Follow symlinks    ( consider extension to hrx -> .hrx+unix whene bounary have permissions and allows symlinks )" \
+"(consider glob                )	-T FILE	File with names to include" \
+"(consider glob                )	-X FILE	File with glob patterns to exclude" \
+"(consider glob                )	--exclude PATTERN	Glob pattern to exclude" \
+"(consider exists check        )	--overwrite		Replace existing files" \
+"(nothing done                 )	--strip-components NUM	NUM of leading components to strip" \
+"(nothing done                 )	--no-recursion		Don't descend in directories" \
+"(consider extension           )	--numeric-owner		Use numeric user:group" \
+"(consider extension           )	--no-same-permissions	Don't restore access permissions" \
 ;
 exit; esac
 
@@ -69,10 +72,15 @@ shift $((OPTIND - 1))
 
 
 
+case ${opt_c+c}${opt_x+x}${opt_t+t} in
+	'')  err "specify one of -c, -x or -t option";;
+	??*) err "specify only one of -c, -x or -t option";;
+esac
 
 
 case ${opt_b+b} in b)
 	case $opt_b_val in
+		0|'<>'|'') err "0 bounary '<>' is not allowed";;
 		"${opt_b_val#*[!0-9]*}") # when it is a num (note: including 0, and not including negative nums in -*)
 			_i=$opt_b_val
 			bounary='<'
@@ -90,7 +98,6 @@ case ${opt_b+b} in b)
 			;;
 	esac
 esac
-
 
 # path-character ::= any character other than
 # U+0000 through U+001F
@@ -175,26 +182,34 @@ printf \
 
 
 # comment:
-hrx_parse_begin_comment() { :; }
-case ${opt_v+v} in
+case ${opt_v+v} in # consider: using option to get only the comments?
 v)
+	hrx_parse_begin_comment() { _hrx_parse__beginmatched=''; }
 	hrx_parse_comment() { printf %s\\n >&2 "comment: $line"; }
+	hrx_parse_end_comment() { :; }
 	;;
 *)
-	hrx_parse_comment() { :; }
+	hrx_parse_begin_comment() {
+		:
+		###_hrx_parse__beginmatched=''
+	}
+	###hrx_parse_comment() { :; }
+	###hrx_parse_end_comment() { :; }
 esac
-hrx_parse_end_comment() { :; }
+
 
 # invalid:
 hrx_parse_begin_x_invalid() {
 	count_invalid=$(( invalid + 1 ))
+	###_hrx_parse__beginmatched
 }
-hrx_parse_x_invalid() { :; }
-hrx_parse_end_x_invalid() { :; }
+###hrx_parse_x_invalid() { :; }
+###hrx_parse_end_x_invalid() { :; }
+
 
 # unused ends:
-hrx_parse_end_dir() { :; }
-hrx_parse_end_file() { :; }
+###hrx_parse_end_dir() { :; }
+hrx_parse_end_file() { :; } # TODO: WHEN '-c' opt specified CREASING ? DOES THIS LINE HAVE TO BE HERE???
 
 
 case ${opt_c+c}${opt_x+x}${opt_t+t} in
@@ -219,7 +234,7 @@ x|t)
 		esac
 	}
 
-	_should_ignore_path() {
+	_match_path() {
 		case $# in
 		0)
 			return 1
@@ -235,135 +250,99 @@ x|t)
 	}
 
 
-	case ${opt_x+x}${opt_t+t} in
-	# -O option in tar combined with -t or with -xv seems to behave the same way, and filenames got printed to stdout...
+
+	# -O option in tar combined with -t or with -xv seems to behave the same way, also filenames got printed to stdout after file content
+	# (I don't see a point of copying this behaviour, this implementation will print the file to begining of the entry - before the file content)...
+
 	# `entry_type` should always be in (dir|file|comment|x_invalid)
 
-	t)
-		# -t dir:
-		hrx_parse_begin_dir() {
-			count_explisit_dirs=$(( explisit_dirs + 1 ))
-			_should_ignore_path "$@" || {
+	# -t & -x dir:
+	hrx_parse_begin_dir() {
+		count_explisit_dirs=$(( explisit_dirs + 1 ))
+		if _match_path "$@"; then
+			case ${opt_t+t}${opt_v+v} in ?*)
 				printf %s\\n "$path"
-			}
-			# case ${opt_v+v} in v) # TODO
-			# log "todo: what sohuld -tv options do?"
-			# esac
-		}
-		hrx_parse_dir() {
-			case $line in ?*)
-				log "todo: should not have content? or allow empty lines? ($path, $line)" # TODO
 			esac
-		}
-
-		# -t file:
-		hrx_parse_begin_file() {
-			count_files=$(( files + 1 ))
-			_should_ignore_path "$@" || {
-				printf %s\\n "$path"
-			}
-		}
-		hrx_parse_file() {
-			case ${opt_O+O} in O)
-				_should_ignore_path "$@" || {
-					printf %s\\n "$line"
+			case ${opt_O+O}:${opt_x+x} in :x)
+				log 'will execute: $ mkdir -p -- '"$path"
+				: : :  mkdir -p -- "$path" || {
+					count_err=$(( count_err + 1 ))
+					log "note: failed to create dir: '$path'"
 				}
 			esac
-		}
+		fi
+		# case ${opt_v+v} in v) # TODO
+		# log "todo: what sohuld -tv options do?"
+		# esac
 
-		;;
-	x) # TODO: what should happend when -O and -t options specifyed
-		hrx_parse_begin_dir() {
-			: log "(debug) fn hrx_parse_begin_dir       +D got: (path=${path-}) '$line' ${2-}"
-			count_explisit_dirs=$(( explisit_dirs + 1 ))
-		}
-		hrx_parse_begin_file() {
-			: log "(debug) fn hrx_parse_begin_file      +F got: (path=${path-}) '$line' ${2-}"
-			count_files=$(( files + 1 ))
-		}
-		hrx_parse_begin_comment() {
-			: log "(debug) fn hrx_parse_begin_comment   +C got: '$line' ${2-}"
-		}
-		hrx_parse_begin_x_invalid() {
-			: log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$line' ${2-}"
-			count_invalid=$(( invalid + 1 ))
-		}
+		###_hrx_parse__beginmatched=''
+	}
+	###hrx_parse_dir() {
+	###	case $line in ?*)
+	###		log "todo: dir body should not have content? or allow empty lines? (path=$path$(in_line))" # TODO
+	###	esac
+	###}
+
+	# -t & -x file:
+	hrx_parse_begin_file() {
+		unset _hrx_parse__beginmatched
+
+		if ! _match_path "$@"; then
+			return
+		fi
+
+		case ${opt_t+t}${opt_v+v} in ?*)
+			printf %s\\n "$path"
+		esac
+		case ${opt_O+O}:${opt_x+x} in :x)
+			path_basedir=${path%/[!/]*}
+			case $path_basedir in ''|"$path") ;; *)
+				if [ ! -d "$path_basedir" ]; then
+					log 'will execute: $ mkdir -p -- '"$path_basedir"
+					: : :  mkdir -p -- "$path_basedir" || {
+						log "failed to create path_basedir directory (expect create/reset file content to fail): '$path_basedir', for file: $path"
+					}
+				fi
+			esac
+			##unset path_basedir
+			log 'will execute: $ :>'"$path"
+			: : :  :\\\>"$path"  || {
+				count_err=$(( count_err + 1 ))
+				log "failed to create/reset content of file: $path"
+				return
+			}
+		esac
+
+		_hrx_parse__beginmatched=''
+		count_files=$(( files + 1 ))
+		_hrx_parse_file__write_err_lines=0
+	}
+	hrx_parse_file() {
+
+		case ${opt_O+O}:${opt_x+x} in
+		O:*)
+			printf %s\\n "$line"
+			;;
+		:x)
+			log 'will execute: $ printf %s\\n '"$line"' > '"$path"
+			: : :  printf %s\\n "$line" \\\> "$path" || { # note: $line var can not have null char $'\0'
+				# do not spam for every line
+				_hrx_parse_file__write_err_lines=$(( _hrx_parse_file__write_err_lines + 1 ))
+			}
+			;;
+		esac
+	}
+	hrx_parse_end_file() {
+
+		case $_hrx_parse_file__write_err_lines in 0);; *)
+			count_err=$(( count_err + 1 ))
+			log "failed to write $_hrx_parse_file__write_err_lines lines to file: $path"
+		esac
+	}
 
 
-		hrx_parse_end_dir() {
-			: log "(debug) fn hrx_parse_end_dir         -D got: (path=${path-}) '$line' ${2-}"
-		}
-		hrx_parse_end_file() {
-			: log "(debug) fn hrx_parse_end_file        -F got: (path=${path-}) '$line' ${2-}"
-		}
-		hrx_parse_end_comment() {
-			: log "(debug) fn hrx_parse_end_comment     -C got: '$line' ${2-}"
-		}
-		hrx_parse_end_x_invalid() {
-			: log "(debug) fn hrx_parse_end_x_invalid   -_ got: '$line' ${2-}"
-		}
 
-
-		hrx_parse_dir() {
-			: log "(debug) fn hrx_parse_dir             =D got: (path=${path-}) '$line' ${2-}"
-		}
-		hrx_parse_file() {
-			: log "(debug) fn hrx_parse_file            =F got: (path=${path-}) '$line' ${2-}"
-		}
-		hrx_parse_comment() {
-			: log "(debug) fn hrx_parse_comment         =C got: '$line' ${2-}"
-		}
-		hrx_parse_x_invalid() {
-			: log "(debug) fn hrx_parse_x_invalid       =_ got: '$line' ${2-}"
-		}
-		;;
-	#*)
-		#	hrx_parse_begin_dir() {
-		#		: log "(debug) fn hrx_parse_begin_dir       +D got: (path=${path-}) '$line' ${2-}"
-		#		count_explisit_dirs=$(( explisit_dirs + 1 ))
-		#	}
-		#	hrx_parse_begin_file() {
-		#		: log "(debug) fn hrx_parse_begin_file      +F got: (path=${path-}) '$line' ${2-}"
-		#		count_files=$(( files + 1 ))
-		#	}
-		#	hrx_parse_begin_comment() {
-		#		: log "(debug) fn hrx_parse_begin_comment   +C got: '$line' ${2-}"
-		#	}
-		#	hrx_parse_begin_x_invalid() {
-		#		: log "(debug) fn hrx_parse_begin_x_invalid +_ got: '$line' ${2-}"
-		#		count_invalid=$(( invalid + 1 ))
-		#	}
-		#
-		#
-		#	hrx_parse_end_dir() {
-		#		: log "(debug) fn hrx_parse_end_dir         -D got: (path=${path-}) '$line' ${2-}"
-		#	}
-		#	hrx_parse_end_file() {
-		#		: log "(debug) fn hrx_parse_end_file        -F got: (path=${path-}) '$line' ${2-}"
-		#	}
-		#	hrx_parse_end_comment() {
-		#		: log "(debug) fn hrx_parse_end_comment     -C got: '$line' ${2-}"
-		#	}
-		#	hrx_parse_end_x_invalid() {
-		#		: log "(debug) fn hrx_parse_end_x_invalid   -_ got: '$line' ${2-}"
-		#	}
-		#
-		#
-		#	hrx_parse_dir() {
-		#		: log "(debug) fn hrx_parse_dir             =D got: (path=${path-}) '$line' ${2-}"
-		#	}
-		#	hrx_parse_file() {
-		#		: log "(debug) fn hrx_parse_file            =F got: (path=${path-}) '$line' ${2-}"
-		#	}
-		#	hrx_parse_comment() {
-		#		: log "(debug) fn hrx_parse_comment         =C got: '$line' ${2-}"
-		#	}
-		#	hrx_parse_x_invalid() {
-		#		: log "(debug) fn hrx_parse_x_invalid       =_ got: '$line' ${2-}"
-		#	}
-	esac
-
-	_hrx_parse_boundary() {
+	_hrx_parse_boundary() { # might be needed when `-c` option  to auto parese boundary in all files 
 		case $1 in
 			\<=*\>*) ;;
 			*) return 1;;
@@ -386,7 +365,7 @@ x|t)
 
 	hrx_get_entry_type() {
 
-		# first time needs to get boundary
+		# first time needs to get boundary, after this redefine fn
 		case ${boundary+b} in
 		b)
 			#_hrx_parse_boundary
@@ -458,13 +437,13 @@ x|t)
 	hrx_parser() {
 		line_num=0
 		unset ended
-		unset _needs_args # improve performance for large amount of arguments
+		unset _needs_args # slightly improve performance for large amount of arguments
 		while read -r line; do
 			line_num=$(( line_num + 1 ))
 
 			case ${entry_type-} in '') ;; *)
 				! hrx_is_boundary "$line" || {
-					hrx_parse_end_"$entry_type"
+					${_hrx_parse__beginmatched+hrx_parse_end_"$entry_type"}
 					entry_type=''
 				}
 			esac
@@ -472,6 +451,7 @@ x|t)
 			
 			case ${entry_type-} in '')
 				hrx_get_entry_type "$line"
+				unset _hrx_parse__beginmatched
 				hrx_parse_begin_"$entry_type" ${_needs_args+"$@"}
 				continue
 			esac
@@ -486,16 +466,17 @@ x|t)
 		case ${entry_type-} in
 			'')
 				if hrx_get_entry_type "$line"; then
+					unset _hrx_parse__beginmatched
 					hrx_parse_begin_"$entry_type" ${_needs_args+"$@"}
-					hrx_parse_end_"$entry_type"
+					${_hrx_parse__beginmatched+hrx_parse_end_"$entry_type"}
 				else
 					log "empty archive"
 				fi
 				
 				return
 		esac
-		hrx_parse_end_"$entry_type"
 
+		${_hrx_parse__beginmatched+hrx_parse_end_"$entry_type"}
 	}
 
 
@@ -512,7 +493,7 @@ c)
 	# > When a HRX file is extracted, the extraction process should (by default) create a directory named after the HRX file, with the extension ".hrx" removed
 	# however this implementation of hrx is sticking to what `tar` command does:
 	# extract files as path in PWD
-	# (todo) if -C opt specifyed changes PWD to that dir
+	# (todo) if -C opt specified changes PWD to that dir
 
 
 
@@ -521,7 +502,7 @@ c)
 		err "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
 	esac
 
-	cat() {
+	cat() { # because why not
 		case $# in 0) ;; *)
 			case $1 in --) shift; esac
 			case $1 in -) ;; *)
@@ -530,7 +511,7 @@ c)
 			esac
 		esac
 
-		while read -r line; do
+		while read -r line; do # note: $line var can not have null char $'\0'
 			printf %s\\n "$line"
 		done
 		printf %s "$line"
@@ -539,7 +520,7 @@ c)
 	hrx_create() {
 		for i; do
 			printf %s\\n "$boundary"
-			cat "$"
+			cat "${______TODO_?}"
 		done > "${opt_f_val:?}"
 	}
 
@@ -561,24 +542,25 @@ esac
 count_files=''
 count_explisit_dirs=''
 count_invalid=''
+count_err=0
 main() {
-case ${opt_c+c}${opt_x+x}${opt_t+t} in
-t)
-	: log "NOTE: 'hrx -t' is in progress"
+	unset -f main
 
-	hrx_parser "$@"
-	;;
-c)
-	err 'hrx -c : NOT IMPLEMENTED'
-	hrx_parser "$@"
-	;;
-x)
-	err 'hrx -x : NOT IMPLEMENTED'
-	;;
+	case ${opt_c+c}${opt_x+x}${opt_t+t} in
+	t)
+		: log "NOTE: 'hrx -t' is in progress"
 
-*)
-	err 'specify only one of -c, -x or -t option'
-esac
+		hrx_parser "$@"
+		;;
+	x)
+		log 'hrx -x : NOT TESTED'
+		hrx_parser "$@"
+		;;
+	c)
+		err 'hrx -c : NOT IMPLEMENTED'
+		hrx_create "$@"
+		;;
+	esac
 }
 
 case ${opt_f_val-} in -) unset opt_f; esac # if its '-' then same as missing -> read from stdin
