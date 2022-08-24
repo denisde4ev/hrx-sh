@@ -6,16 +6,16 @@ set -eu
 
 o=${0##*["${PATHSEP:-/}"]}
 
-err() {
-	printf %s\\n >&2 "$o: $1"
-	exit "${2-2}"
-}
 log() {
 	printf %s\\n >&2 "$o: $1"
 }
+die() {
+	log "$1"
+	exit "${2-2}"
+}
 
 
-case $# in 0) err "use --help for usage"; esac
+case $# in 0) die "use --help for usage"; esac
 
 
 case $1 in --help)
@@ -73,14 +73,14 @@ shift $((OPTIND - 1))
 
 
 case ${opt_c+c}${opt_x+x}${opt_t+t} in
-	'')  err "specify one of -c, -x or -t option";;
-	??*) err "specify only one of -c, -x or -t option";;
+	'')  die "specify one of -c, -x or -t option";;
+	??*) die "specify only one of -c, -x or -t option";;
 esac
 
 
 case ${opt_b+b} in b)
 	case $opt_b_val in
-		0|'<>'|'') err "0 bounary '<>' is not allowed";;
+		0|'<>'|'') die "0 bounary '<>' is not allowed";;
 		"${opt_b_val#*[!0-9]*}") # when it is a num (note: including 0, and not including negative nums in -*)
 			_i=$opt_b_val
 			bounary='<'
@@ -221,10 +221,10 @@ x|t)
 	}
 
 	parsing_err() {
-		err "parsing error($1)$(in_line)" "${2-4}"
+		die "parsing error($1)$(in_line)" "${2-4}"
 	}
 	error() {
-		err "ERROR $1$(in_line)" "${2-4}"
+		die "ERROR $1$(in_line)" "${2-4}"
 	}
 
 	hrx_is_boundary() {
@@ -377,7 +377,7 @@ x|t)
 			;;
 		*)
 			_hrx_parse_boundary "$line" || { # sets 'boundary'
-				err "mallformed entry, can not parse boundary$(in_line)"
+				die "mallformed entry, can not parse boundary$(in_line)"
 			}
 			;;
 		esac
@@ -499,7 +499,7 @@ c)
 
 	case ${opt_b+b} in '')
 		# for now require to be provided
-		err "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
+		die "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
 	esac
 
 	cat() { # because why not
@@ -524,7 +524,7 @@ c)
 		done > "${opt_f_val:?}"
 	}
 
-	err "todo hrx -c, more fns"
+	die "todo hrx -c, more fns"
 	;;
 esac
 
@@ -557,7 +557,7 @@ main() {
 		hrx_parser "$@"
 		;;
 	c)
-		err 'hrx -c : NOT IMPLEMENTED'
+		die 'hrx -c : NOT IMPLEMENTED'
 		hrx_create "$@"
 		;;
 	esac
