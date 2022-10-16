@@ -507,6 +507,7 @@ c)
 		die "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
 	esac
 
+	# src: /^/ https://github.com/denisde4ev/sh/raw/master/cat
 	cat() { # because why not
 		case $# in 0) ;; *)
 			case $1 in --) shift; esac
