@@ -1,13 +1,13 @@
-<==> file
+<===> file
 file content
-<==> dir-for-file/file2
+<===> dir-for-file/file2
 file content 22
-<==> dir/
-<==> dir/dir2/
+<===> dir/
+<===> dir/dir2/
 
-<==> dir/file2
+<===> dir/file2
 a file
-<==>
+<===>
 comment
 
-<==> file-with-no-eof
+<===> file-with-no-eof
