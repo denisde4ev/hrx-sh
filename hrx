@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+case $1 in -x) set -x; shift; esac
 
 # Warning: problematic for binary files,
 # shell scripts can not have null char $'\0' in vairables
@@ -40,7 +41,7 @@ printf %s\\n \
 "(won't add                    )	-j	(De)compress using bzip2" \
 "(won't add                    )	--lzma	(De)compress using lzma" \
 "(won't add/consider           )	-a	(De)compress based on extension" \
-"(consider extension           )	-h	Follow symlinks    ( consider extension to hrx -> .hrx+unix whene bounary have permissions and allows symlinks )" \
+"(consider extension           )	-h	Follow symlinks    ( consider extension to hrx -> .hrx+unix whene boundary have permissions and allows symlinks )" \
 "(consider glob                )	-T FILE	File with names to include" \
 "(consider glob                )	-X FILE	File with glob patterns to exclude" \
 "(consider glob                )	--exclude PATTERN	Glob pattern to exclude" \
@@ -89,21 +90,21 @@ esac
 
 case ${opt_b+b} in b)
 	case $opt_b_val in
-		0|'<>'|'') die "0 bounary '<>' is not allowed";;
+		0|'<>'|'') die "0 boundary '<>' is not allowed";;
 		"${opt_b_val#*[!0-9]*}") # when it is a num (note: including 0, and not including negative nums in -*)
 			_i=$opt_b_val
-			bounary='<'
+			boundary='<'
 			while case $_i in *[!0-9]*) log "ERROR 5"; false;; 0) false; esac; do
-				bounary=$bounary'='
+				boundary=$boundary'='
 				: $(( _i = _i - 1 )) || exit
 			done
-			bounary=$bounary'>'
+			boundary=$boundary'>'
 			;;
 		'<'*'='*'>') # bad: lazy check
-			bounary=$opt_b_val
+			boundary=$opt_b_val
 			;;
 		=|=*=) # bad: lazy check
-			bounary='<'$opt_b_val'>'
+			boundary='<'$opt_b_val'>'
 			;;
 	esac
 esac
@@ -243,6 +244,52 @@ x|t)
 		esac
 	}
 
+
+	hrx_parse_boundary_fn1() { # might be needed when `-c` option  to auto parese boundary in all files 
+		case $1 in
+			\<=*\>*) ;;
+			*) return 1;;
+		esac
+
+		_i=${line#?}
+		_i=${_i%%\>*}
+
+		case ${_i} in
+			''|*[!=]*) return 1;;
+			*) boundary=${_i%%\>*}\>
+		esac
+
+		_i=\<${_i}\>
+		case $line in
+			"$_i"*) boundary=$_i;; # found first boundary
+			*) error 1;;
+		esac
+	}
+
+	hrx_parse_boundary_fn2() {
+		case ${boundary+b} in
+		b) # note: if boundary var present, then we find the first line that matches that boundary (skiping start)
+			#hrx_parse_boundary_fn1
+			while :; do
+				case $line in "$boundary "*) break; esac
+				#log "ignoring begining line ${line_num}: ${line}"
+				read -r line || break # seems like empty archive
+			done
+			;;
+		*)
+			hrx_parse_boundary_fn1 "$line" || { # sets 'boundary'
+				die "mallformed entry, can not parse boundary$(in_line)"
+			}
+			;;
+		esac
+	}
+
+
+esac
+
+case ${opt_c+c}${opt_x+x}${opt_t+t} in
+x)
+
 	_match_path() {
 		case $# in
 		0)
@@ -347,45 +394,11 @@ x|t)
 
 
 
-	_hrx_parse_boundary() { # might be needed when `-c` option  to auto parese boundary in all files 
-		case $1 in
-			\<=*\>*) ;;
-			*) return 1;;
-		esac
-
-		_i=${line#?}
-		_i=${_i%%\>*}
-
-		case ${_i} in
-			''|*[!=]*) return 1;;
-			*) boundary=${_i%%\>*}\>
-		esac
-
-		_i=\<${_i}\>
-		case $line in
-			"$_i"*) boundary=$_i;; # found first boundary
-			*) error 1;;
-		esac
-	}
 
 	hrx_get_entry_type() {
 
 		# first time needs to get boundary, after this redefine fn
-		case ${boundary+b} in
-		b)
-			#_hrx_parse_boundary
-			while :; do
-				case $line in "$boundary "*) break; esac
-				log "ignoring begining line ${line_num}: ${line}"
-				read -r line || break # seems like empty archive
-			done
-			;;
-		*)
-			_hrx_parse_boundary "$line" || { # sets 'boundary'
-				die "mallformed entry, can not parse boundary$(in_line)"
-			}
-			;;
-		esac
+		hrx_parse_boundary_fn2
 
 		hrx_get_entry_type() {
 
@@ -439,7 +452,7 @@ x|t)
 		hrx_get_entry_type "$@"
 	}
 
-	hrx_parser() {
+	hrx_extract() {
 		line_num=0
 		unset ended
 		unset _needs_args # slightly improve performance for large amount of arguments
@@ -504,10 +517,14 @@ c)
 
 	case ${opt_b+b} in '')
 		# for now require to be provided
-		die "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
+		#die "(todo add auto boundary chooser) for now --boundary option is required when creating archive"
+		# die "(todo add auto boundary chooser) for now -b (boundary) option is required when creating archive"
+
+		# default boundary as specs:
+		boundary='<===>'
 	esac
 
-	# src: /^/ https://github.com/denisde4ev/sh/raw/master/cat
+	# src: /^/\ https://github.com/denisde4ev/sh/blob/56e23b438756f3fc70b5bda83e9423224df640b7/cat.sh
 	cat() { # because why not
 		case $# in 0) ;; *)
 			case $1 in --) shift; esac
@@ -524,13 +541,65 @@ c)
 	}
 
 	hrx_create() {
-		for i; do
-			printf %s\\n "$boundary"
-			cat "${______TODO_?}"
-		done > "${opt_f_val:?}"
+		for file; do
+			file_type=''
+			if
+			[ -L "$file" ]; then file_type=link; elif
+			[ -f "$file" ]; then file_type=file; elif
+			[ -d "$file" ]; then file_type=dir; elif
+			[ -e "$file" ]; then file_type=exists; elif
+			true; then :; fi
+
+			# NOTE: here unexplicitly calling fn-s `hrx_create_link|hrx_create_file|hrx_create_dir|hrx_create_exists`
+			hrx_create_"$file_type"1 "$file"
+		done
 	}
 
-	die "todo hrx -c, more fns"
+	hrx_create_link1() {
+		printf %s\\n "$boundary $1 (Symlink)"
+		readlink -- "$1"
+	}
+
+	## todo: something here # case ${opt_1+1} in
+		
+	hrx_create_dir1() {
+		printf %s\\n "$boundary $1/"
+
+		# recurse inside of directory here:
+		set -- "$1"/*
+		if [ -e "$1" ] || [ -L "$1" ]; then
+			hrx_create "$@"
+		#else
+		#	set --
+		fi
+	}
+	hrx_create_exists1() {
+		die "unrecognized file type for: file='${1}'" # TODO:! test this / ask ai what could happen
+	}
+	hrx_create_file1() {
+		case "$1" in "${opt_f_val:?}") log "warning: skiping archive output itself: file='$1'"; return; esac
+
+		printf %s\\n "$boundary $1"
+		cat "$1"
+	}
+
+	;;
+t)
+#example:
+#F 2
+#L bb -> aa
+#D dir/
+#F dir/123
+	hrx_test() {
+		#case ${1+x} in x)
+		case $# in [1-9]*) die "not expected to get extra arguments: \$1='$1'";
+# todo
+esac
+		echo NOT DONE! >&2; exit 123;
+		while IFS='' read -r line; do
+			exit 123
+		done < "${opt_f_val:?}"
+	}
 	;;
 esac
 
@@ -556,15 +625,15 @@ main() {
 	t)
 		: log "NOTE: 'hrx -t' is in progress"
 
-		hrx_parser "$@"
+		hrx_test "$@"
 		;;
 	x)
 		log 'hrx -x : NOT TESTED'
-		hrx_parser "$@"
+		hrx_extract "$@"
 		;;
 	c)
-		die 'hrx -c : NOT IMPLEMENTED'
-		hrx_create "$@"
+		[ ! -e "${opt_f_val:?}" ] || die "arhive file already exists" # TODO: consider further implement appending to file
+		hrx_create "$@"  >> "${opt_f_val:?}"
 		;;
 	esac
 }
